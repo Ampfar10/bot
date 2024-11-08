@@ -6,7 +6,7 @@ module.exports = {
     description: 'Mute the bot in this group.',
     category: 'Group',
     async execute(conn, chatId, args, ownerId, senderId) {
-        const statusFilePath = path.join(__dirname, '../data/mute.json');
+        const statusFilePath = path.join(__dirname, '../data/antilinkStatus.json');
 
         // Read the existing status file or initialize it
         let statusData;
