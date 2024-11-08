@@ -1,0 +1,233 @@
+const Jimp = require('jimp'); // Importing Jimp for image creation
+
+let gameState = {
+    board: Array(3).fill(null).map(() => Array(3).fill(null)), // 3x3 board
+    players: [],
+    currentPlayer: 0,
+    gameActive: false,
+    markers: ['X', 'O'], // Store markers for players
+};
+
+// Initialize the game board
+const initializeBoard = () => {
+    gameState.board = Array(3).fill(null).map(() => Array(3).fill(null));
+};
+
+// Create the board image
+const createBoardImage = async (winner = null) => {
+    const size = 300; // Size of the image (300x300)
+    const img = new Jimp(size, size, 0xffffffff); // White background
+    const fontNumbers = await Jimp.loadFont(Jimp.FONT_SANS_16_BLACK); // Load smaller font for numbers
+    const fontMarkers = await Jimp.loadFont(Jimp.FONT_SANS_32_BLACK); // Load bigger font for X and O
+
+    // Draw the grid
+    for (let i = 1; i < 3; i++) {
+        img.scan(0, i * 100, size, 1, (ix, iy) => {
+            img.setPixelColor(0xff000000, ix, iy); // Draw horizontal line
+        });
+        img.scan(i * 100, 0, 1, size, (ix, iy) => {
+            img.setPixelColor(0xff000000, ix, iy); // Draw vertical line
+        });
+    }
+
+    // Draw numbers and X and O
+    const numberMap = [
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 9]
+    ];
+
+    for (let row = 0; row < 3; row++) {
+        for (let col = 0; col < 3; col++) {
+            const cell = gameState.board[row][col];
+            const number = numberMap[row][col];
+            img.print(fontNumbers, col * 100 + 40, row * 100 + 20, number.toString()); // Smaller number
+            if (cell) {
+                img.print(fontMarkers, col * 100 + 30, row * 100 + 60, cell); // Bigger X or O
+            }
+        }
+    }
+
+    // Draw the winning line if there is a winner
+    if (winner) {
+        const color = 0xffff0000; // Red color for winning line
+        if (winner.includes('row')) {
+            const row = winner.split(' ')[1];
+            img.scan(0, row * 100 + 50, size, 1, (ix, iy) => {
+                img.setPixelColor(color, ix, iy); // Draw winning horizontal line
+            });
+        } else if (winner.includes('col')) {
+            const col = winner.split(' ')[1];
+            img.scan(col * 100 + 50, 0, 1, size, (ix, iy) => {
+                img.setPixelColor(color, ix, iy); // Draw winning vertical line
+            });
+        } else if (winner === 'diag1') {
+            img.scan(0, 0, size, size, (ix, iy) => {
+                if (ix === iy) img.setPixelColor(color, ix, iy); // Draw winning diagonal line
+            });
+        } else if (winner === 'diag2') {
+            img.scan(0, 0, size, size, (ix, iy) => {
+                if (ix + iy === 2) img.setPixelColor(color, ix, iy); // Draw winning anti-diagonal line
+            });
+        }
+    }
+
+    const buffer = await img.getBufferAsync(Jimp.MIME_PNG);
+    return buffer;
+};
+
+// Check for a winner
+const checkWinner = () => {
+    const board = gameState.board;
+
+    // Check rows, columns, and diagonals
+    for (let i = 0; i < 3; i++) {
+        if (board[i][0] && board[i][0] === board[i][1] && board[i][1] === board[i][2]) {
+            return `row ${i}`; // Row winner
+        }
+        if (board[0][i] && board[0][i] === board[1][i] && board[1][i] === board[2][i]) {
+            return `col ${i}`; // Column winner
+        }
+    }
+    if (board[0][0] && board[0][0] === board[1][1] && board[1][1] === board[2][2]) {
+        return 'diag1'; // Diagonal winner
+    }
+    if (board[0][2] && board[0][2] === board[1][1] && board[1][1] === board[2][0]) {
+        return 'diag2'; // Diagonal winner
+    }
+
+    return null; // No winner
+};
+
+// Place a marker on the board
+const placeMarker = async (conn, playerId, cellNumber, chatId) => {
+    if (!gameState.gameActive) {
+        return "Game not active. Start the game first.";
+    }
+
+    if (gameState.players[gameState.currentPlayer] !== playerId) {
+        return "It's not your turn!";
+    }
+
+    const row = Math.floor((cellNumber - 1) / 3); // Calculate row (0-2)
+    const col = (cellNumber - 1) % 3; // Calculate column (0-2)
+
+    if (gameState.board[row][col] !== null) {
+        return "Slot already taken! Choose another slot.";
+    }
+
+    // Place the marker
+    gameState.board[row][col] = gameState.markers[gameState.currentPlayer];
+
+    // Check for a winner
+    const winner = checkWinner();
+    if (winner) {
+        gameState.gameActive = false;
+        await displayBoard(conn, chatId, winner); // Display board after game ends
+        return `Player ${gameState.players[gameState.currentPlayer]} wins! 🎉`;
+    }
+
+    // Check for a draw
+    if (gameState.board.flat().every(cell => cell)) {
+        gameState.gameActive = false;
+        await displayBoard(conn, chatId); // Display board after game ends
+        return "It's a draw!";
+    }
+
+    // Switch to the next player's turn
+    gameState.currentPlayer = (gameState.currentPlayer + 1) % 2; // Toggle between 0 and 1
+
+    // Notify who plays next and tag them
+    await displayBoard(conn, chatId);
+    return `Move made! Next player's turn: @${gameState.players[gameState.currentPlayer]}`; // Tag the player
+};
+
+// Display the current board
+const displayBoard = async (conn, chatId, winner = null) => {
+    try {
+        const imageBuffer = await createBoardImage(winner);
+        await conn.sendMessage(chatId, {
+            image: imageBuffer,
+            caption: "Current Tic-Tac-Toe Board:",
+            mentions: gameState.players // Mention all players
+        });
+    } catch (error) {
+        console.error("Error displaying board:", error);
+    }
+};
+
+// Start the game
+const startGame = () => {
+    initializeBoard();
+    gameState.players = []; // Reset player list
+    gameState.currentPlayer = Math.floor(Math.random() * 2); // Randomly assign first player
+    gameState.gameActive = true;
+    return "Game started! Use !ttt join to join the game.";
+};
+
+// Restart the game
+const restartGame = () => {
+    initializeBoard();
+    gameState.currentPlayer = Math.floor(Math.random() * 2); // Randomly assign first player
+    gameState.gameActive = true;
+    return "Game restarted! It's a fresh start!";
+};
+
+// End the game
+const endGame = () => {
+    gameState.gameActive = false;
+    return "Game has been ended.";
+};
+
+// Main command handling
+module.exports = {
+    name: 'ttt',
+    description: 'Play Tic-Tac-Toe',
+    category: 'Games',
+    async execute(conn, chatId, args, ownerId, senderId) {
+        const subCommand = args[0];
+
+        if (subCommand === "start") {
+            conn.sendMessage(chatId, { text: startGame() });
+        } else if (subCommand === "restart") {
+            if (!gameState.gameActive) {
+                conn.sendMessage(chatId, { text: restartGame() });
+            } else {
+                conn.sendMessage(chatId, { text: "You cannot restart while the game is active." });
+            }
+        } else if (subCommand === "join") {
+            if (gameState.players.length >= 2) {
+                return conn.sendMessage(chatId, { text: "Game is full! There are already two players." });
+            }
+            gameState.players.push(senderId); // Add player
+            conn.sendMessage(chatId, { text: `Player @${senderId} joined! Current players: ${gameState.players.length}.` });
+
+
+            // If both players have joined, display the board
+            if (gameState.players.length === 2) {
+                await displayBoard(conn, chatId); // Send the game board
+                const playerX = `@${gameState.players[0]}`.replace('@s.whatsapp.net', '');
+                const playerO = `@${gameState.players[1]}`.replace('@s.whatsapp.net', '');
+                const startingPlayer = `@${gameState.players[gameState.currentPlayer]}`.replace('@s.whatsapp.net', '');
+                conn.sendMessage(chatId, {
+                    text: `Player ${playerX} is X \n Player ${playerO} is O \nStarting player: ${startingPlayer} \n\nTo play the game use !move 1-9`,
+                    mentions: [gameState.players[0], gameState.players[1]],
+                });
+            }
+        } else if (subCommand === "move") {
+            const cellNumber = parseInt(args[1]);
+            if (!isNaN(cellNumber) && cellNumber >= 1 && cellNumber <= 9) {
+                const result = await placeMarker(conn, senderId, cellNumber, chatId);
+                conn.sendMessage(chatId, { text: result });
+            } else {
+                conn.sendMessage(chatId, { text: "Invalid move! Choose a number between 1 and 9." });
+            }
+        } else if (subCommand === "end") {
+            conn.sendMessage(chatId, { text: endGame() });
+        } else {
+            conn.sendMessage(chatId, { text: "Unknown command! Use start, join, move <number>, restart, or end." });
+        }
+    }
+};
+
+
