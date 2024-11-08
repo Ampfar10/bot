@@ -5,7 +5,7 @@ const path = require('path');
 const express = require('express');
 const QRCode = require('qrcode');
 const handleMessage = require('./handlers/messageHandler'); // Import the message handler
-const { isAdmin } = require('./utils/groupUtils');
+//const { isAdmin } = require('./utils/groupUtils');
 const logStream = fs.createWriteStream('baileys.log', { flags: 'a' });
 
 // Define the command prefix and owner ID
