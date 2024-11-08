@@ -6,7 +6,7 @@ const { getAntilinkStatus } = require('../commands/antilink.js'); // Adjust the 
 
 
 async function isMuted(chatId) {
-    const statusFilePath = path.join(__dirname, '../data/mute.json');
+    const statusFilePath = path.join(__dirname, '../data/antilinkStatus.json');
     if (!fs.existsSync(statusFilePath)) return false;
 
     const statusData = JSON.parse(fs.readFileSync(statusFilePath));
